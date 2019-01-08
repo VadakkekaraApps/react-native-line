@@ -15,11 +15,18 @@ import com.facebook.react.bridge.WritableMap;
 import com.linecorp.linesdk.LineAccessToken;
 import com.linecorp.linesdk.LineApiResponse;
 import com.linecorp.linesdk.LineProfile;
+import com.linecorp.linesdk.Scope; 
 import com.linecorp.linesdk.api.LineApiClient;
 import com.linecorp.linesdk.api.LineApiClientBuilder;
+import com.linecorp.linesdk.auth.LineAuthenticationParams;
 import com.linecorp.linesdk.auth.LineLoginApi;
 import com.linecorp.linesdk.auth.LineLoginResult;
 
+import com.facebook.react.bridge.ReadableArray;
+
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 public class LineLogin extends ReactContextBaseJavaModule {
     private static final String MODULE_NAME = "LineLoginManager";
     private static final String ERROR = "ERROR";
@@ -47,7 +54,7 @@ public class LineLogin extends ReactContextBaseJavaModule {
                         promise.reject(ERROR, "Line login canceled by user");
                         break;
                     case AUTHENTICATION_AGENT_ERROR:
-                        promise.reject(ERROR, "The user has denied the approval");
+                        promise.reject(ERROR, loginResult.getErrorData().toString());
                         break;
                     default:
                         promise.reject(ERROR, loginResult.getErrorData().toString());
@@ -69,21 +76,42 @@ public class LineLogin extends ReactContextBaseJavaModule {
 
     @ReactMethod
     public void login(final Promise promise) {
+        this.loginWithPermissions(null, promise);
+    }
+
+    @ReactMethod
+    public void loginWithPermissions(ReadableArray permissions, final Promise promise) {
         try {
             currentPromise = promise;
             Context context = getCurrentActivity().getApplicationContext();
             String channelId = context.getString(R.string.line_channel_id);
-            Intent intent = LineLoginApi.getLoginIntent(context, channelId);
+            
+            List<Scope> scopes;
+
+            if ((permissions != null) && (permissions.size() > 0)) {
+                List<String> scopeStrings = new ArrayList<>(permissions.size());
+                for (int i = 0; i < permissions.size(); i++) {
+                    String scope = permissions.getString(i);
+                    scopeStrings.add(scope);
+                }
+                scopes = Scope.convertToScopeList(scopeStrings);
+            } else {
+                scopes = Scope.convertToScopeList(new ArrayList());
+            }
+
+            Intent intent = LineLoginApi.getLoginIntent(
+                    context,
+                    channelId,
+                    new LineAuthenticationParams.Builder()
+                            .scopes(Arrays.asList(Scope.PROFILE))
+                            .build());
             getCurrentActivity().startActivityForResult(intent, REQUEST_CODE);
         } catch (Exception e) {
             promise.reject(ERROR, e.toString());
         }
     }
 
-    @ReactMethod
-    public void loginWithPermissions(final Promise promise) {
-        promise.reject(ERROR, "Login with permissions is not supported on Android.");
-    }
+    
 
     @ReactMethod
     public void currentAccessToken(final Promise promise) {
@@ -132,7 +160,7 @@ public class LineLogin extends ReactContextBaseJavaModule {
 
     private WritableMap parseAccessToken(LineAccessToken accessToken) {
         WritableMap result = Arguments.createMap();
-        result.putString("accessToken", accessToken.getAccessToken());
+        result.putString("accessToken", accessToken.getTokenString());
         result.putString("expirationDate", Long.toString(accessToken.getExpiresInMillis()));
         return result;
     }
